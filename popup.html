@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Quick a11y checks</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <div class="popup-card">
+      <header class="header">
+        <div class="header-left">
+          <div class="brand-icon" aria-hidden="true">
+            <img src="icon.png" alt="">
+          </div>
+          <div class="title-group">
+            <h1>Quick a11y checks</h1>
+            <p class="subtitle">Automated visual auditor</p>
+          </div>
+        </div>
+        <button class="status-badge" id="activity-toggle" type="button" aria-pressed="true">
+          <span class="dot"></span><span id="activity-label">Active</span>
+        </button>
+      </header>
+      <main>
+        <div class="check-group">
+          <label class="switch-row">
+            <span class="row-label">Headings <b class="count-badge" data-count="headings"></b></span>
+            <span class="checkbox-container"><input type="checkbox" data-check="headings" aria-label="Headings"></span>
+          </label>
+        </div>
+        <div class="check-group">
+          <label class="switch-row">
+            <span class="row-label">Images <b class="count-badge" data-count="image.total"></b></span>
+            <span class="checkbox-container"><input type="checkbox" data-check="images" data-image-main aria-label="Images"></span>
+          </label>
+          <div class="subchecks">
+            <label class="switch-row">
+              <span class="row-label">Informative <b class="count-badge" data-count="image.informative"></b></span>
+              <span class="checkbox-container"><input type="checkbox" data-check="image.informative" aria-label="Informative images"></span>
+            </label>
+            <label class="switch-row">
+              <span class="row-label">Decorative <b class="count-badge" data-count="image.decorative"></b></span>
+              <span class="checkbox-container"><input type="checkbox" data-check="image.decorative" aria-label="Decorative images"></span>
+            </label>
+            <label class="switch-row">
+              <span class="row-label">Missing accessible name <b class="count-badge warning" data-count="image.missing"></b></span>
+              <span class="checkbox-container"><input type="checkbox" data-check="image.missing" aria-label="Images missing accessible name"></span>
+            </label>
+          </div>
+        </div>
+        <div class="check-group">
+          <label class="switch-row">
+            <span class="row-label">Lists <b class="count-badge" data-count="list.total"></b></span>
+            <span class="checkbox-container"><input type="checkbox" data-check="lists" data-list-main aria-label="Lists"></span>
+          </label>
+          <div class="subchecks">
+            <label class="switch-row">
+              <span class="row-label">Unordered <b class="count-badge" data-count="list.unordered"></b></span>
+              <span class="checkbox-container"><input type="checkbox" data-check="list.unordered" aria-label="Unordered lists"></span>
+            </label>
+            <label class="switch-row">
+              <span class="row-label">Ordered <b class="count-badge" data-count="list.ordered"></b></span>
+              <span class="checkbox-container"><input type="checkbox" data-check="list.ordered" aria-label="Ordered lists"></span>
+            </label>
+          </div>
+        </div>
+      </main>
+      <footer class="footer">
+        <button class="footer-status" id="overlay-toggle" type="button">
+          <span class="indicator-dot"></span><span id="status" role="status">No overlays active</span>
+        </button>
+        <span class="footer-version">v1.0.0</span>
+      </footer>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
