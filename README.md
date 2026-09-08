@@ -57,7 +57,8 @@ content in screenshots.
 Replace the placeholder below with a monitored support email or public issue
 tracker before publishing:
 
-- Support contact: `REPLACE_WITH_SUPPORT_EMAIL_OR_ISSUE_TRACKER`
+- Support contact: irastrel1788+a11y@gmail.com
+- Issue tracker: https://github.com/IraStrel/quick-a11y-checks/issues
 
 ### Privacy practices
 
