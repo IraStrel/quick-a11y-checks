@@ -102,22 +102,22 @@
     element.setAttribute("data-a11y-extension-outline", "true");
     element.style.setProperty("outline", style.outline, "important");
 
-    if (state.showLabelsOnHover) {
-      const showLabel = () => {
-        if (!state.showLabelsOnHover) return;
-        label.style.opacity = "1";
-        label.style.visibility = "visible";
-      };
-      const hideLabel = () => {
-        if (!state.showLabelsOnHover) return;
-        label.style.opacity = "0";
-        label.style.visibility = "hidden";
-      };
-      element.addEventListener("pointerenter", showLabel);
-      element.addEventListener("pointerleave", hideLabel);
-      element.addEventListener("focusin", showLabel);
-      element.addEventListener("focusout", hideLabel);
-    }
+    const showLabel = () => {
+      if (!state.showLabelsOnHover) return;
+      label.style.opacity = "1";
+      label.style.visibility = "visible";
+    };
+    const hideLabel = () => {
+      if (!state.showLabelsOnHover) return;
+      label.style.opacity = "0";
+      label.style.visibility = "hidden";
+    };
+    element.addEventListener("pointerenter", showLabel);
+    element.addEventListener("pointerleave", hideLabel);
+    element.addEventListener("mouseenter", showLabel);
+    element.addEventListener("mouseleave", hideLabel);
+    element.addEventListener("focusin", showLabel);
+    element.addEventListener("focusout", hideLabel);
   }
 
   function accessibleName(element, root) {
