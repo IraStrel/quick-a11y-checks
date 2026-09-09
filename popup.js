@@ -7,9 +7,11 @@ const status = document.querySelector("#status");
 const activityToggle = document.querySelector("#activity-toggle");
 const activityLabel = document.querySelector("#activity-label");
 const overlayToggle = document.querySelector("#overlay-toggle");
+const hoverLabelsSwitch = document.querySelector("#show-labels-on-hover");
 const knownCounts = new Set();
 let extensionActive = true;
 let overlaysVisible = true;
+let showLabelsOnHover = false;
 let unsupported = false;
 
 function isUnsupportedUrl(url = "") {
@@ -30,6 +32,7 @@ async function saveState() {
   await chrome.storage.local.set({
     extensionActive,
     overlaysVisible,
+    showLabelsOnHover,
     selectedFilters: selectedFilters()
   });
 }
@@ -96,7 +99,8 @@ async function sendOperationalState() {
   await sendTabMessage(tab, {
     type: "a11y-operational-state",
     extensionActive,
-    overlaysVisible
+    overlaysVisible,
+    showLabelsOnHover
   });
 }
 
@@ -173,10 +177,12 @@ async function loadState() {
     const stored = await chrome.storage.local.get({
       extensionActive: true,
       overlaysVisible: true,
+      showLabelsOnHover: false,
       selectedFilters: []
     });
     extensionActive = stored.extensionActive !== false;
     overlaysVisible = stored.overlaysVisible !== false;
+    showLabelsOnHover = stored.showLabelsOnHover === true;
     const currentState = await sendTabMessage(tab, { type: "a11y-check-state" });
     const savedFilters = stored.selectedFilters.filter((filter) =>
       filter !== "images" && filter !== "lists"
@@ -191,6 +197,9 @@ async function loadState() {
     if (filtersNeedRestore) await saveState();
     updateImageMain();
     updateListMain();
+    if (hoverLabelsSwitch) {
+      hoverLabelsSwitch.checked = showLabelsOnHover;
+    }
     await sendOperationalState();
     updateOperationalUi();
     if (!unsupported && checks.some((input) => input.checked)) {
@@ -216,6 +225,14 @@ activityToggle.addEventListener("click", async () => {
 overlayToggle.addEventListener("click", async () => {
   if (unsupported) return;
   overlaysVisible = !overlaysVisible;
+  await saveState();
+  await sendOperationalState();
+  updateOperationalUi();
+});
+
+hoverLabelsSwitch?.addEventListener("change", async () => {
+  if (unsupported) return;
+  showLabelsOnHover = hoverLabelsSwitch.checked;
   await saveState();
   await sendOperationalState();
   updateOperationalUi();

@@ -3,6 +3,7 @@
   const state = {
     extensionActive: true,
     overlaysVisible: true,
+    showLabelsOnHover: false,
     headings: false,
     image: {
       informative: false,
@@ -92,11 +93,31 @@
       zIndex: "2147483647",
       pointerEvents: "none",
       maxWidth: "300px",
-      whiteSpace: "nowrap"
+      whiteSpace: "nowrap",
+      opacity: state.showLabelsOnHover ? "0" : "1",
+      visibility: state.showLabelsOnHover ? "hidden" : "visible",
+      transition: "opacity 0.12s ease, visibility 0.12s ease"
     });
     document.documentElement.appendChild(label);
     element.setAttribute("data-a11y-extension-outline", "true");
     element.style.setProperty("outline", style.outline, "important");
+
+    if (state.showLabelsOnHover) {
+      const showLabel = () => {
+        if (!state.showLabelsOnHover) return;
+        label.style.opacity = "1";
+        label.style.visibility = "visible";
+      };
+      const hideLabel = () => {
+        if (!state.showLabelsOnHover) return;
+        label.style.opacity = "0";
+        label.style.visibility = "hidden";
+      };
+      element.addEventListener("pointerenter", showLabel);
+      element.addEventListener("pointerleave", hideLabel);
+      element.addEventListener("focusin", showLabel);
+      element.addEventListener("focusout", hideLabel);
+    }
   }
 
   function accessibleName(element, root) {
@@ -304,6 +325,7 @@
   function applyOperationalState(message) {
     if (typeof message.extensionActive === "boolean") state.extensionActive = message.extensionActive;
     if (typeof message.overlaysVisible === "boolean") state.overlaysVisible = message.overlaysVisible;
+    if (typeof message.showLabelsOnHover === "boolean") state.showLabelsOnHover = message.showLabelsOnHover;
     render();
   }
 
