@@ -75,6 +75,8 @@
   function addOverlay(element, text, style, position = "left") {
     const rect = element.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
+
+    const outlineColor = (style.outline.match(/solid\s+([^;]+)/i)?.[1] || "#000000").trim();
     const label = document.createElement("div");
     label.setAttribute(overlayAttribute, "true");
     label.textContent = text;
@@ -99,8 +101,11 @@
       transition: "opacity 0.12s ease, visibility 0.12s ease"
     });
     document.documentElement.appendChild(label);
+
     element.setAttribute("data-a11y-extension-outline", "true");
     element.style.setProperty("outline", style.outline, "important");
+    element.style.setProperty("outline-offset", "0px", "important");
+    element.style.setProperty("box-shadow", `0 0 0 2px ${outlineColor}`, "important");
 
     const showLabel = () => {
       if (!state.showLabelsOnHover) return;
