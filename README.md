@@ -45,13 +45,18 @@ Closed shadow roots cannot be inspected by browser content scripts.
 
 ### Description
 
-Quick accessibility checks highlights headings, images, and lists on the
-currently open webpage. It helps developers and content authors quickly inspect
-heading structure, image accessible names, decorative images, and ordered and
-unordered lists. Results are shown as temporary visual overlays and counts.
+Quick accessibility checks helps you spot common accessibility issues while
+you browse or build a webpage. Turn on a check to highlight headings, images,
+and lists directly on the page, then use clear labels and counts to inspect
+heading levels and text, image text alternatives, decorative images, and list
+structure. Highlights follow elements as you scroll, including content inside
+open shadow roots and supported frames.
 
-The checks run locally in Chrome. The extension does not send page content to a
-server, collect browsing history, or permanently modify webpages.
+Install it to get a fast, visual first pass without leaving the page or
+manually searching through its markup. Use hover-only labels to keep the view
+uncluttered while you explore. Checks run locally in Chrome; page content is
+not sent to a server, browsing history is not collected, and webpages are not
+permanently modified.
 
 ### Category and language
 

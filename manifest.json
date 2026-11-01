@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Quick accessibility checks",
   "version": "1.0.0",
-  "description": "Highlight headings, images, and lists to help test page accessibility.",
+  "description": "Spot accessibility issues as you browse: highlight headings, image text alternatives, and lists with labels and counts.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["<all_urls>"],
   "action": {
@@ -12,14 +12,14 @@
       "16": "icon.png",
       "32": "icon.png",
       "48": "icon.png",
-      "128": "icon.png"
+      "128": "icon128.png"
     }
   },
   "icons": {
     "16": "icon.png",
     "32": "icon.png",
     "48": "icon.png",
-    "128": "icon.png"
+    "128": "icon128.png"
   },
   "background": {
     "service_worker": "background.js"

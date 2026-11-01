@@ -73,6 +73,7 @@
   }
 
   const overlayTargets = new WeakMap();
+  const overlayTargetsByHoverTarget = new WeakMap();
   let overlayPositionUpdateScheduled = false;
 
   function getVisibleRect(element) {
@@ -128,12 +129,18 @@
       clipPath: `inset(${visibleRect.top - rect.top}px ${rect.right - visibleRect.right}px ${rect.bottom - visibleRect.bottom}px ${visibleRect.left - rect.left}px)`,
       visibility: "visible"
     });
-    const labelHeight = target.label.getBoundingClientRect().height;
-    const labelTop = visibleRect.top >= labelHeight
-      ? visibleRect.top - labelHeight
-      : visibleRect.bottom;
-    target.label.style.top = `${labelTop}px`;
-    target.label.style.left = `${visibleRect.left}px`;
+    if (target.labelPlacement === "inside-top-right") {
+      target.label.style.maxWidth = `${Math.min(300, visibleRect.width)}px`;
+      target.label.style.top = `${visibleRect.top}px`;
+      target.label.style.left = `${visibleRect.right - target.label.getBoundingClientRect().width}px`;
+    } else {
+      const labelHeight = target.label.getBoundingClientRect().height;
+      const labelTop = visibleRect.top >= labelHeight
+        ? visibleRect.top - labelHeight
+        : visibleRect.bottom;
+      target.label.style.top = `${labelTop}px`;
+      target.label.style.left = `${visibleRect.left}px`;
+    }
     target.label.style.visibility = target.labelVisible ? "visible" : "hidden";
   }
 
@@ -159,7 +166,37 @@
   document.addEventListener("scroll", scheduleOverlayPositionUpdate, true);
   window.addEventListener("resize", scheduleOverlayPositionUpdate);
 
-  function addOverlay(element, text, style) {
+  function targetsForHoverEvent(event) {
+    const targets = new Set();
+    for (const node of event.composedPath()) {
+      if (node instanceof Element) {
+        overlayTargetsByHoverTarget.get(node)?.forEach((target) => targets.add(target));
+      }
+    }
+    return targets;
+  }
+
+  function isWithinHoverTarget(node, hoverTarget) {
+    for (let current = node; current; current = composedParent(current)) {
+      if (current === hoverTarget) return true;
+    }
+    return false;
+  }
+
+  document.addEventListener("pointerover", (event) => {
+    if (!state.showLabelsOnHover) return;
+    targetsForHoverEvent(event).forEach((target) => target.showLabel());
+  }, true);
+
+  document.addEventListener("pointerout", (event) => {
+    if (!state.showLabelsOnHover) return;
+    targetsForHoverEvent(event).forEach((target) => {
+      if (isWithinHoverTarget(event.relatedTarget, target.hoverTarget)) return;
+      target.hideLabel();
+    });
+  }, true);
+
+  function addOverlay(element, text, style, labelPlacement = "outside-top-left") {
     const rect = element.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
 
@@ -210,11 +247,18 @@
       element,
       label,
       hoverTarget: hoverTargetFor(element),
+      labelPlacement,
       intersectionKnown: false,
       isIntersecting: false,
       inViewport: false,
       labelVisible: !state.showLabelsOnHover
     };
+    let hoverTargets = overlayTargetsByHoverTarget.get(target.hoverTarget);
+    if (!hoverTargets) {
+      hoverTargets = new Set();
+      overlayTargetsByHoverTarget.set(target.hoverTarget, hoverTargets);
+    }
+    hoverTargets.add(target);
     overlayTargets.set(highlight, target);
     target.visibilityObserver = new IntersectionObserver(([entry]) => {
       if (!element.isConnected) return;
@@ -245,10 +289,8 @@
         label.style.visibility = "hidden";
       }, 300);
     };
-    target.hoverTarget.addEventListener("pointerenter", showLabel);
-    target.hoverTarget.addEventListener("pointerleave", hideLabel);
-    target.hoverTarget.addEventListener("mouseenter", showLabel);
-    target.hoverTarget.addEventListener("mouseleave", hideLabel);
+    target.showLabel = showLabel;
+    target.hideLabel = hideLabel;
     target.hoverTarget.addEventListener("focusin", showLabel);
     target.hoverTarget.addEventListener("focusout", hideLabel);
     target.hoverTarget.addEventListener("transitionend", scheduleOverlayPositionUpdate);
@@ -268,9 +310,15 @@
   }
 
   function hoverTargetFor(element) {
+    let pointerTarget = null;
     for (let current = element; current; current = composedParent(current)) {
       if (current.nodeType !== Node.ELEMENT_NODE) continue;
       const tag = current.tagName.toLowerCase();
+      const parent = composedParent(current);
+      const hasPointerCursor = getComputedStyle(current).cursor === "pointer";
+      const parentHasPointerCursor = parent?.nodeType === Node.ELEMENT_NODE
+        && getComputedStyle(parent).cursor === "pointer";
+      if (hasPointerCursor && !parentHasPointerCursor) pointerTarget = current;
       if (
         tag === "button"
         || (tag === "a" && current.hasAttribute("href"))
@@ -280,7 +328,7 @@
         return current;
       }
     }
-    return element;
+    return pointerTarget || element;
   }
 
   function listTypeForItem(element) {
@@ -395,7 +443,7 @@
       for (const element of root.querySelectorAll("li,[role='listitem']")) {
         const listType = listTypeForItem(element);
         if (isVisible(element) && !isAriaHidden(element) && listType && state.list[listType]) {
-          addOverlay(element, "List item", styles.list.item);
+          addOverlay(element, "List item", styles.list.item, "inside-top-right");
         }
       }
     });
@@ -447,6 +495,7 @@
       const target = overlayTargets.get(highlight);
       if (!target) return;
       window.clearTimeout(target.hideLabelTimer);
+      overlayTargetsByHoverTarget.get(target.hoverTarget)?.delete(target);
       target.visibilityObserver.disconnect();
       highlight.remove();
     });
