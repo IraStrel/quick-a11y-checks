@@ -72,19 +72,122 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  function addOverlay(element, text, style, position = "left") {
+  const overlayTargets = new WeakMap();
+  let overlayPositionUpdateScheduled = false;
+
+  function getVisibleRect(element) {
+    const rect = element.getBoundingClientRect();
+    const visibleRect = {
+      top: Math.max(0, rect.top),
+      right: Math.min(document.documentElement.clientWidth, rect.right),
+      bottom: Math.min(document.documentElement.clientHeight, rect.bottom),
+      left: Math.max(0, rect.left)
+    };
+
+    for (let ancestor = composedParent(element); ancestor; ancestor = composedParent(ancestor)) {
+      if (ancestor.nodeType !== Node.ELEMENT_NODE) continue;
+
+      const style = getComputedStyle(ancestor);
+      if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+
+      const ancestorRect = ancestor.getBoundingClientRect();
+      const clipLeft = ancestorRect.left + ancestor.clientLeft;
+      const clipTop = ancestorRect.top + ancestor.clientTop;
+      if (style.overflowX !== "visible") {
+        visibleRect.left = Math.max(visibleRect.left, clipLeft);
+        visibleRect.right = Math.min(visibleRect.right, clipLeft + ancestor.clientWidth);
+      }
+      if (style.overflowY !== "visible") {
+        visibleRect.top = Math.max(visibleRect.top, clipTop);
+        visibleRect.bottom = Math.min(visibleRect.bottom, clipTop + ancestor.clientHeight);
+      }
+    }
+
+    if (visibleRect.right <= visibleRect.left || visibleRect.bottom <= visibleRect.top) return null;
+    return visibleRect;
+  }
+
+  function positionOverlay(highlight, target, rect) {
+    const visibleRect = getVisibleRect(target.element);
+    target.inViewport = target.intersectionKnown
+      && target.isIntersecting
+      && visibleRect !== null
+      && !isHidden(target.element);
+    target.visibleRect = target.inViewport ? visibleRect : null;
+    if (!target.inViewport) {
+      highlight.style.visibility = "hidden";
+      target.label.style.visibility = "hidden";
+      return;
+    }
+
+    Object.assign(highlight.style, {
+      top: `${rect.top}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      clipPath: `inset(${visibleRect.top - rect.top}px ${rect.right - visibleRect.right}px ${rect.bottom - visibleRect.bottom}px ${visibleRect.left - rect.left}px)`,
+      visibility: "visible"
+    });
+    const labelHeight = target.label.getBoundingClientRect().height;
+    const labelTop = visibleRect.top >= labelHeight
+      ? visibleRect.top - labelHeight
+      : visibleRect.bottom;
+    target.label.style.top = `${labelTop}px`;
+    target.label.style.left = `${visibleRect.left}px`;
+    target.label.style.visibility = target.labelVisible ? "visible" : "hidden";
+  }
+
+  function updateOverlayPositions() {
+    document.querySelectorAll("[data-a11y-extension-highlight-overlay]").forEach((highlight) => {
+      const target = overlayTargets.get(highlight);
+      if (!target || !target.element.isConnected) return;
+
+      const rect = target.element.getBoundingClientRect();
+      positionOverlay(highlight, target, rect);
+    });
+  }
+
+  function scheduleOverlayPositionUpdate() {
+    if (overlayPositionUpdateScheduled) return;
+    overlayPositionUpdateScheduled = true;
+    window.requestAnimationFrame(() => {
+      overlayPositionUpdateScheduled = false;
+      updateOverlayPositions();
+    });
+  }
+
+  document.addEventListener("scroll", scheduleOverlayPositionUpdate, true);
+  window.addEventListener("resize", scheduleOverlayPositionUpdate);
+
+  function addOverlay(element, text, style) {
     const rect = element.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
 
-    const outlineColor = (style.outline.match(/solid\s+([^;]+)/i)?.[1] || "#000000").trim();
+    const highlight = document.createElement("div");
+    highlight.setAttribute("data-a11y-extension-highlight-overlay", "true");
+    Object.assign(highlight.style, {
+      position: "fixed",
+      top: `${rect.top}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      boxSizing: "border-box",
+      border: style.outline,
+      borderRadius: "0px",
+      background: "transparent",
+      zIndex: "2147483646",
+      pointerEvents: "none",
+      visibility: "hidden"
+    });
+    document.documentElement.appendChild(highlight);
+
     const label = document.createElement("div");
     label.setAttribute(overlayAttribute, "true");
     label.textContent = text;
     Object.assign(label.style, {
-      position: "absolute",
-      top: `${scrollY + rect.top}px`,
-      left: `${scrollX + rect.left + (position === "right" ? rect.width : 0)}px`,
-      transform: position === "right" ? "translateX(-100%)" : "none",
+      position: "fixed",
+      top: `${rect.top}px`,
+      left: `${rect.left}px`,
       background: style.background,
       color: style.color || "black",
       font: "bold 12px Arial, sans-serif",
@@ -94,35 +197,63 @@
       borderRadius: "4px",
       zIndex: "2147483647",
       pointerEvents: "none",
+      boxSizing: "border-box",
       maxWidth: "300px",
-      whiteSpace: "nowrap",
+      whiteSpace: "normal",
+      overflowWrap: "anywhere",
       opacity: state.showLabelsOnHover ? "0" : "1",
-      visibility: state.showLabelsOnHover ? "hidden" : "visible",
+      visibility: "hidden",
       transition: "opacity 0.12s ease, visibility 0.12s ease"
     });
     document.documentElement.appendChild(label);
-
-    element.setAttribute("data-a11y-extension-outline", "true");
-    element.style.setProperty("outline", style.outline, "important");
-    element.style.setProperty("outline-offset", "0px", "important");
-    element.style.setProperty("box-shadow", `0 0 0 2px ${outlineColor}`, "important");
+    const target = {
+      element,
+      label,
+      hoverTarget: hoverTargetFor(element),
+      intersectionKnown: false,
+      isIntersecting: false,
+      inViewport: false,
+      labelVisible: !state.showLabelsOnHover
+    };
+    overlayTargets.set(highlight, target);
+    target.visibilityObserver = new IntersectionObserver(([entry]) => {
+      if (!element.isConnected) return;
+      target.intersectionKnown = true;
+      target.isIntersecting = entry.isIntersecting
+        && entry.intersectionRect.width > 0
+        && entry.intersectionRect.height > 0;
+      positionOverlay(highlight, target, element.getBoundingClientRect());
+    });
+    target.visibilityObserver.observe(element);
+    positionOverlay(highlight, target, rect);
 
     const showLabel = () => {
       if (!state.showLabelsOnHover) return;
+      window.clearTimeout(target.hideLabelTimer);
+      target.hideLabelTimer = null;
+      target.labelVisible = true;
       label.style.opacity = "1";
-      label.style.visibility = "visible";
+      label.style.visibility = target.inViewport ? "visible" : "hidden";
+      scheduleOverlayPositionUpdate();
     };
     const hideLabel = () => {
       if (!state.showLabelsOnHover) return;
-      label.style.opacity = "0";
-      label.style.visibility = "hidden";
+      window.clearTimeout(target.hideLabelTimer);
+      target.hideLabelTimer = window.setTimeout(() => {
+        target.labelVisible = false;
+        label.style.opacity = "0";
+        label.style.visibility = "hidden";
+      }, 300);
     };
-    element.addEventListener("pointerenter", showLabel);
-    element.addEventListener("pointerleave", hideLabel);
-    element.addEventListener("mouseenter", showLabel);
-    element.addEventListener("mouseleave", hideLabel);
-    element.addEventListener("focusin", showLabel);
-    element.addEventListener("focusout", hideLabel);
+    target.hoverTarget.addEventListener("pointerenter", showLabel);
+    target.hoverTarget.addEventListener("pointerleave", hideLabel);
+    target.hoverTarget.addEventListener("mouseenter", showLabel);
+    target.hoverTarget.addEventListener("mouseleave", hideLabel);
+    target.hoverTarget.addEventListener("focusin", showLabel);
+    target.hoverTarget.addEventListener("focusout", hideLabel);
+    target.hoverTarget.addEventListener("transitionend", scheduleOverlayPositionUpdate);
+    highlight.addEventListener("pointerenter", showLabel);
+    highlight.addEventListener("pointerleave", hideLabel);
   }
 
   function accessibleName(element, root) {
@@ -136,14 +267,20 @@
       .join(" ");
   }
 
-  function isInteractive(element) {
+  function hoverTargetFor(element) {
     for (let current = element; current; current = composedParent(current)) {
       if (current.nodeType !== Node.ELEMENT_NODE) continue;
       const tag = current.tagName.toLowerCase();
-      if (tag === "button" || (tag === "a" && current.hasAttribute("href"))) return true;
-      if (["button", "link"].includes(current.getAttribute("role"))) return true;
+      if (
+        tag === "button"
+        || (tag === "a" && current.hasAttribute("href"))
+        || current.hasAttribute("href")
+        || ["button", "link", "listitem"].includes(current.getAttribute("role"))
+      ) {
+        return current;
+      }
     }
-    return false;
+    return element;
   }
 
   function listTypeForItem(element) {
@@ -171,7 +308,9 @@
         const tag = element.tagName.toLowerCase();
         const isNativeHeading = /^h[1-6]$/.test(tag);
         const level = isNativeHeading ? Number(tag.slice(1)) : Number(element.getAttribute("aria-level"));
-        const text = isNativeHeading ? tag.toUpperCase() : `ARIA H${element.getAttribute("aria-level")}`;
+        const headingLabel = isNativeHeading ? tag.toUpperCase() : `ARIA H${element.getAttribute("aria-level")}`;
+        const headingText = element.textContent.replace(/\s+/g, " ").trim();
+        const text = headingText ? `${headingLabel}: ${headingText}` : headingLabel;
         const style = styles.heading.levels[level] || styles.heading.fallback;
         if (state.headings) {
           addOverlay(element, text, style);
@@ -256,7 +395,7 @@
       for (const element of root.querySelectorAll("li,[role='listitem']")) {
         const listType = listTypeForItem(element);
         if (isVisible(element) && !isAriaHidden(element) && listType && state.list[listType]) {
-          addOverlay(element, "List item", styles.list.item, "right");
+          addOverlay(element, "List item", styles.list.item);
         }
       }
     });
@@ -264,10 +403,12 @@
   }
 
   function render() {
-    document.querySelectorAll(`[${overlayAttribute}]`).forEach((overlay) => overlay.remove());
+    removeOverlays();
     walk(document, (root) => {
       root.querySelectorAll("[data-a11y-extension-outline]").forEach((element) => {
         element.style.removeProperty("outline");
+        element.style.removeProperty("box-shadow");
+        element.style.removeProperty("outline-offset");
         element.removeAttribute("data-a11y-extension-outline");
       });
     });
@@ -287,16 +428,29 @@
     counts["list.unordered"] = listCounts.unordered;
     counts["list.ordered"] = listCounts.ordered;
     if (!state.extensionActive || !state.overlaysVisible) {
-      document.querySelectorAll(`[${overlayAttribute}]`).forEach((overlay) => overlay.remove());
+      removeOverlays();
       walk(document, (root) => {
         root.querySelectorAll("[data-a11y-extension-outline]").forEach((element) => {
           element.style.removeProperty("outline");
+          element.style.removeProperty("box-shadow");
+          element.style.removeProperty("outline-offset");
           element.removeAttribute("data-a11y-extension-outline");
         });
       });
     }
     chrome.runtime.sendMessage({ type: "a11y-counts", counts });
     lastCounts = counts;
+  }
+
+  function removeOverlays() {
+    document.querySelectorAll("[data-a11y-extension-highlight-overlay]").forEach((highlight) => {
+      const target = overlayTargets.get(highlight);
+      if (!target) return;
+      window.clearTimeout(target.hideLabelTimer);
+      target.visibilityObserver.disconnect();
+      highlight.remove();
+    });
+    document.querySelectorAll(`[${overlayAttribute}]`).forEach((overlay) => overlay.remove());
   }
 
   let lastCounts = {

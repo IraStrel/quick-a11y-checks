@@ -17,13 +17,25 @@ indeterminate when only some are selected. Turning a check off removes its
 labels and outlines. The popup shows counts for headings, each image category,
 and unordered lists, ordered lists, and list items across all frames.
 
+## Highlight labels
+
+Heading labels include the heading level and its text (for example, `H2:
+Section title`). Labels for other checks describe the image or list result.
+Long label text wraps so the full label remains readable.
+
+Labels are placed just above the highlighted area when there is room, otherwise
+below it, aligned with its left edge. They move with the highlighted element
+when the page scrolls, and overlays are hidden when their target is outside the
+visible area or clipped by a collapsed container.
+
 ## Show labels on hover
 
 Use the "Show labels on hover" switch in the popup to keep the highlight
 rectangles visible while hiding the text labels until you hover over the
-highlighted element or focus it with the keyboard. This is useful when the
-page already has its own visible tooltips or dialogs and you want the
-extension overlays to stay subtle.
+highlighted element or its interactive ancestor, or focus it with the keyboard.
+This also works for interactive components implemented with custom elements or
+open shadow roots. This is useful when the page already has its own visible
+tooltips or dialogs and you want the extension overlays to stay subtle.
 
 The extension runs its content script in every frame, including cross-origin
 iframes permitted by the active tab, and recursively checks open shadow roots.
