@@ -156,6 +156,12 @@ function clearCounts() {
   });
 }
 
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "a11y-ax-unavailable") {
+    setStatus("Computed accessibility semantics unavailable on this page.");
+  }
+});
+
 async function refreshCounts() {
   const tab = await getActiveTab();
   await new Promise((resolve) => setTimeout(resolve, 100));

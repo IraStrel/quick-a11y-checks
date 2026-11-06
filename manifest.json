@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "125",
   "name": "Quick accessibility checks",
   "version": "1.0.0",
   "description": "Spot accessibility issues as you browse: highlight headings, image text alternatives, and lists with labels and counts.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "debugger", "scripting", "storage"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_title": "Accessibility checks",

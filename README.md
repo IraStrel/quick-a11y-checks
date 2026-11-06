@@ -3,6 +3,9 @@
 A Manifest V3 Chrome extension that highlights accessibility-relevant headings,
 images, and lists.
 
+Chrome 125 or later is required for computed accessibility-tree inspection in
+iframes.
+
 ## Load in Chrome
 
 1. Open `chrome://extensions`.
@@ -39,7 +42,9 @@ tooltips or dialogs and you want the extension overlays to stay subtle.
 
 The extension runs its content script in every frame, including cross-origin
 iframes permitted by the active tab, and recursively checks open shadow roots.
-Closed shadow roots cannot be inspected by browser content scripts.
+Closed shadow roots cannot be traversed by content scripts, but headings exposed
+in Chrome's accessibility tree can still be labelled using their computed name
+and bounds.
 
 ## Chrome Web Store listing
 
@@ -49,8 +54,11 @@ Quick accessibility checks helps you spot common accessibility issues while
 you browse or build a webpage. Turn on a check to highlight headings, images,
 and lists directly on the page, then use clear labels and counts to inspect
 heading levels and text, image text alternatives, decorative images, and list
-structure. Highlights follow elements as you scroll, including content inside
-open shadow roots and supported frames.
+structure. Checks run in supported iframes and recursively inspect open Shadow
+DOM roots, including custom elements whose accessibility semantics are exposed
+through standard host attributes. The extension also reads Chrome's computed
+accessibility tree for custom elements, allowing checks to use roles, names,
+and heading levels provided through ElementInternals.
 
 Install it to get a fast, visual first pass without leaving the page or
 manually searching through its markup. Use hover-only labels to keep the view
@@ -89,7 +97,11 @@ tracker before publishing:
 
 Quick accessibility checks needs page access because it reads the current
 webpage DOM, ARIA attributes, visibility, accessible names, frames, and open
-shadow roots to calculate accessibility checks and add temporary overlays.
+shadow roots to calculate accessibility checks and add temporary overlays. It
+briefly uses Chrome's debugger API during computed accessibility scans, then
+detaches when each scan queue finishes. Chrome displays an additional debugger
+permission warning when the extension is installed or updated; the browser's
+debugging indicator may appear during scans.
 
 The extension stores only:
 
@@ -99,6 +111,8 @@ The extension stores only:
 	lists, and list items for the current tabs and frames.
 
 The extension does not store page text, image content, accessible labels, URLs,
-personal information, or browsing history. It does not transmit data outside
-the browser. Temporary count data is removed when it is no longer needed,
-including when its tab is closed.
+personal information, or browsing history. DOM markers used to map computed
+accessibility semantics to page elements are temporary and removed after each
+scan. Data is processed locally and is not transmitted outside the browser.
+Temporary count data is removed when it is no longer needed, including when its
+tab is closed.

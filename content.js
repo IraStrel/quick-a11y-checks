@@ -73,8 +73,12 @@
   }
 
   const overlayTargets = new WeakMap();
+  const overlayTargetsByElement = new WeakMap();
   const overlayTargetsByHoverTarget = new WeakMap();
+  const virtualAxOverlays = [];
   let overlayPositionUpdateScheduled = false;
+  let virtualAxRefreshTimer = null;
+  let axScanId = 0;
 
   function getVisibleRect(element) {
     const rect = element.getBoundingClientRect();
@@ -166,6 +170,27 @@
   document.addEventListener("scroll", scheduleOverlayPositionUpdate, true);
   window.addEventListener("resize", scheduleOverlayPositionUpdate);
 
+  function scheduleVirtualAxRefresh() {
+    if (!virtualAxOverlays.length || window !== window.top) return;
+    window.clearTimeout(virtualAxRefreshTimer);
+    virtualAxRefreshTimer = window.setTimeout(() => {
+      chrome.runtime.sendMessage({
+        type: "a11y-ax-scan",
+        scanId: ++axScanId,
+        checks: {
+          extensionActive: state.extensionActive,
+          overlaysVisible: state.overlaysVisible,
+          headings: state.headings,
+          image: state.image,
+          list: state.list
+        }
+      });
+    }, 120);
+  }
+
+  document.addEventListener("scroll", scheduleVirtualAxRefresh, true);
+  window.addEventListener("resize", scheduleVirtualAxRefresh);
+
   function targetsForHoverEvent(event) {
     const targets = new Set();
     for (const node of event.composedPath()) {
@@ -245,6 +270,7 @@
     document.documentElement.appendChild(label);
     const target = {
       element,
+      highlight,
       label,
       hoverTarget: hoverTargetFor(element),
       labelPlacement,
@@ -260,6 +286,7 @@
     }
     hoverTargets.add(target);
     overlayTargets.set(highlight, target);
+    overlayTargetsByElement.set(element, target);
     target.visibilityObserver = new IntersectionObserver(([entry]) => {
       if (!element.isConnected) return;
       target.intersectionKnown = true;
@@ -307,6 +334,138 @@
       .map((id) => root.querySelector(`#${CSS.escape(id)}`)?.textContent.trim() || "")
       .filter(Boolean)
       .join(" ");
+  }
+
+  function applyAxSemantics(items) {
+    const itemsByMarker = new Map(items.map((item) => [item.marker, item]));
+    const axCounts = { headings: 0, informative: 0, decorative: 0, missing: 0, unordered: 0, ordered: 0 };
+    removeVirtualAxOverlays();
+
+    walk(document, (root) => {
+      for (const element of root.querySelectorAll("[data-qac-ax-marker]")) {
+        const marker = element.getAttribute("data-qac-ax-marker");
+        const item = itemsByMarker.get(marker);
+        element.removeAttribute("data-qac-ax-marker");
+        if (!item || !isVisible(element) || isAriaHidden(element)) continue;
+
+        const labelName = item.name.trim();
+        if (item.role === "heading") {
+          const isNativeHeading = /^h[1-6]$/.test(element.localName);
+          const level = Math.min(6, Math.max(1, Number(item.level) || (isNativeHeading ? Number(element.localName.slice(1)) : 2)));
+          const headingLabel = isNativeHeading ? element.localName.toUpperCase() : `ARIA H${level}`;
+          const text = labelName ? `${headingLabel}: ${labelName}` : headingLabel;
+          const isAuditedHeading = element.matches("h1,h2,h3,h4,h5,h6,[role='heading'][aria-level]");
+          const existingTarget = overlayTargetsByElement.get(element);
+          if (existingTarget) {
+            existingTarget.label.textContent = text;
+            scheduleOverlayPositionUpdate();
+          } else if (state.headings) {
+            addOverlay(element, text, styles.heading.levels[level] || styles.heading.fallback);
+          }
+          if (!isAuditedHeading) axCounts.headings += 1;
+        } else if (item.role === "img") {
+          if (element.matches('[role="img"]:not(img):not(svg)')) continue;
+          const category = labelName ? "informative" : "missing";
+          axCounts[category] += 1;
+          if (state.image[category]) {
+            const text = labelName ? `ROLE=IMG NAME: "${labelName}"` : "ROLE=IMG NO ACCESSIBLE NAME";
+            addOverlay(element, text, labelName ? styles.image.role : styles.image.missing);
+          }
+        } else if (item.role === "list") {
+          if (element.matches("ul,ol,[role='list']")) continue;
+          const category = element.localName === "ol" ? "ordered" : "unordered";
+          axCounts[category] += 1;
+          if (state.list[category]) {
+            addOverlay(element, category === "ordered" ? "Ordered list" : "Unordered list", styles.list[category]);
+          }
+        } else if (item.role === "listitem") {
+          if (element.matches("li,[role='listitem']") && listTypeForItem(element)) continue;
+          const listType = listTypeForItem(element) || "unordered";
+          if (state.list[listType]) addOverlay(element, "List item", styles.list.item, "inside-top-right");
+        }
+      }
+    });
+
+    for (const item of items) {
+      if (item.role === "heading" && !item.marker && item.bounds) {
+        axCounts.headings += 1;
+        addVirtualAxHeading(item);
+      }
+    }
+
+    lastCounts.headings = Math.max(0, lastCounts.headings - lastAxCounts.headings) + axCounts.headings;
+    lastCounts["image.informative"] = Math.max(0, lastCounts["image.informative"] - lastAxCounts.informative) + axCounts.informative;
+    lastCounts["image.decorative"] = Math.max(0, lastCounts["image.decorative"] - lastAxCounts.decorative) + axCounts.decorative;
+    lastCounts["image.missing"] = Math.max(0, lastCounts["image.missing"] - lastAxCounts.missing) + axCounts.missing;
+    lastCounts["list.unordered"] = Math.max(0, lastCounts["list.unordered"] - lastAxCounts.unordered) + axCounts.unordered;
+    lastCounts["list.ordered"] = Math.max(0, lastCounts["list.ordered"] - lastAxCounts.ordered) + axCounts.ordered;
+    lastAxCounts = axCounts;
+    chrome.runtime.sendMessage({ type: "a11y-counts", counts: lastCounts });
+  }
+
+  function addVirtualAxHeading(item) {
+    const { left, top, width, height } = item.bounds;
+    if (!width || !height || left >= window.innerWidth || top >= window.innerHeight || left + width <= 0 || top + height <= 0) return;
+
+    const level = Math.min(6, Math.max(1, Number(item.level) || 2));
+    const localName = (item.localName || "").toLowerCase();
+    const headingLabel = /^h[1-6]$/.test(localName) ? localName.toUpperCase() : `ARIA H${level}`;
+    const labelText = item.name ? `${headingLabel}: ${item.name}` : headingLabel;
+    const style = styles.heading.levels[level] || styles.heading.fallback;
+    const highlight = document.createElement("div");
+    highlight.setAttribute("data-a11y-extension-highlight-overlay", "true");
+    Object.assign(highlight.style, {
+      position: "fixed",
+      top: `${top}px`,
+      left: `${left}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+      boxSizing: "border-box",
+      border: style.outline,
+      pointerEvents: "none",
+      zIndex: "2147483646"
+    });
+
+    const label = document.createElement("div");
+    label.setAttribute(overlayAttribute, "true");
+    label.textContent = labelText;
+    Object.assign(label.style, {
+      position: "fixed",
+      top: `${Math.max(0, top - 24)}px`,
+      left: `${Math.max(0, Math.min(left, window.innerWidth - 300))}px`,
+      maxWidth: "300px",
+      padding: "2px 5px",
+      border: "1px solid #000",
+      background: style.background,
+      color: style.color || "black",
+      font: "bold 12px Arial, sans-serif",
+      lineHeight: "16px",
+      overflowWrap: "anywhere",
+      pointerEvents: "none",
+      zIndex: "2147483647",
+      opacity: state.showLabelsOnHover ? "0" : "1",
+      visibility: state.showLabelsOnHover ? "hidden" : "visible"
+    });
+    document.documentElement.append(highlight, label);
+
+    const pointerHandler = (event) => {
+      if (!state.showLabelsOnHover) return;
+      const isOverHeading = event.clientX >= left && event.clientX <= left + width
+        && event.clientY >= top && event.clientY <= top + height;
+      label.style.opacity = isOverHeading ? "1" : "0";
+      label.style.visibility = isOverHeading ? "visible" : "hidden";
+    };
+    document.addEventListener("pointermove", pointerHandler, true);
+    virtualAxOverlays.push({ highlight, label, pointerHandler });
+  }
+
+  function removeVirtualAxOverlays() {
+    for (const overlay of virtualAxOverlays) {
+      overlay.highlight.remove();
+      overlay.label.remove();
+      document.removeEventListener("pointermove", overlay.pointerHandler, true);
+    }
+    virtualAxOverlays.length = 0;
   }
 
   function hoverTargetFor(element) {
@@ -452,6 +611,7 @@
 
   function render() {
     removeOverlays();
+    lastAxCounts = { headings: 0, informative: 0, decorative: 0, missing: 0, unordered: 0, ordered: 0 };
     walk(document, (root) => {
       root.querySelectorAll("[data-a11y-extension-outline]").forEach((element) => {
         element.style.removeProperty("outline");
@@ -488,14 +648,29 @@
     }
     chrome.runtime.sendMessage({ type: "a11y-counts", counts });
     lastCounts = counts;
+    if (window === window.top) {
+      chrome.runtime.sendMessage({
+        type: "a11y-ax-scan",
+        scanId: ++axScanId,
+        checks: {
+          extensionActive: state.extensionActive,
+          overlaysVisible: state.overlaysVisible,
+          headings: state.headings,
+          image: state.image,
+          list: state.list
+        }
+      });
+    }
   }
 
   function removeOverlays() {
+    removeVirtualAxOverlays();
     document.querySelectorAll("[data-a11y-extension-highlight-overlay]").forEach((highlight) => {
       const target = overlayTargets.get(highlight);
       if (!target) return;
       window.clearTimeout(target.hideLabelTimer);
       overlayTargetsByHoverTarget.get(target.hoverTarget)?.delete(target);
+      overlayTargetsByElement.delete(target.element);
       target.visibilityObserver.disconnect();
       highlight.remove();
     });
@@ -510,6 +685,7 @@
     "list.unordered": 0,
     "list.ordered": 0
   };
+  let lastAxCounts = { headings: 0, informative: 0, decorative: 0, missing: 0, unordered: 0, ordered: 0 };
 
   function toggleCheck(message) {
     if (message?.type !== "a11y-check-toggle" || typeof message.check !== "string") return;
@@ -552,6 +728,10 @@
   });
 
   chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "a11y-ax-semantics") {
+      applyAxSemantics(message.items || []);
+      return;
+    }
     if (message?.type === "a11y-operational-state") {
       applyOperationalState(message);
       forwardToChildFrames(message);
@@ -592,9 +772,19 @@
   });
 
   window.addEventListener("message", (event) => {
-    if (event.source !== window) return;
-    if (event.data?.type === "a11y-extension-toggle") toggleCheck(event.data);
-    if (event.data?.type === "a11y-operational-state") applyOperationalState(event.data);
+    if (event.source !== window.parent) return;
+    if (event.data?.type === "a11y-extension-toggle") {
+      toggleCheck({
+        type: "a11y-check-toggle",
+        check: event.data.check,
+        enabled: event.data.enabled
+      });
+      forwardToChildFrames(event.data);
+    }
+    if (event.data?.type === "a11y-operational-state") {
+      applyOperationalState(event.data);
+      forwardToChildFrames(event.data);
+    }
   });
 
   render();
